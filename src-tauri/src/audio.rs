@@ -30,9 +30,16 @@ pub fn list_microphones() -> Vec<MicDevice> {
     devices
 }
 
+/// Wrapper to make cpal::Stream usable across threads.
+/// SAFETY: cpal::Stream on macOS (CoreAudio) is thread-safe in practice;
+/// we only access it behind a Mutex to start/stop recording.
+struct SendStream(#[allow(dead_code)] cpal::Stream);
+unsafe impl Send for SendStream {}
+unsafe impl Sync for SendStream {}
+
 pub struct AudioRecorder {
     samples: Arc<Mutex<Vec<f32>>>,
-    stream: Option<cpal::Stream>,
+    stream: Option<SendStream>,
 }
 
 impl AudioRecorder {
@@ -78,7 +85,7 @@ impl AudioRecorder {
             .map_err(|e| e.to_string())?;
 
         stream.play().map_err(|e| e.to_string())?;
-        self.stream = Some(stream);
+        self.stream = Some(SendStream(stream));
         Ok(())
     }
 
