@@ -2,42 +2,69 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tauri App</title>
-    <script type="module" src="/src/main.ts" defer></script>
+    <title>Typr</title>
+    <link rel="stylesheet" href="/src/style.css" />
   </head>
-
   <body>
-    <main class="container">
-      <h1>Welcome to Tauri</h1>
+    <div id="app">
+      <header>
+        <div id="status-indicator">
+          <span id="status-dot"></span>
+          <span id="status-text">Ready</span>
+        </div>
+      </header>
 
-      <div class="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/src/assets/vite.svg" class="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img
-            src="/src/assets/tauri.svg"
-            class="logo tauri"
-            alt="Tauri logo"
-          />
-        </a>
-        <a href="https://www.typescriptlang.org/docs" target="_blank">
-          <img
-            src="/src/assets/typescript.svg"
-            class="logo typescript"
-            alt="typescript logo"
-          />
-        </a>
-      </div>
-      <p>Click on the Tauri logo to learn more about the framework</p>
+      <main>
+        <section class="setting-group">
+          <label for="mic-select">Microphone</label>
+          <select id="mic-select"></select>
+        </section>
 
-      <form class="row" id="greet-form">
-        <input id="greet-input" placeholder="Enter a name..." />
-        <button type="submit">Greet</button>
-      </form>
-      <p id="greet-msg"></p>
-    </main>
+        <section class="setting-group">
+          <label>Engine</label>
+          <div class="toggle-group">
+            <button id="engine-local" class="toggle-btn active">Local Whisper</button>
+            <button id="engine-cloud" class="toggle-btn">Groq Cloud</button>
+          </div>
+        </section>
+
+        <section class="setting-group" id="local-settings">
+          <label for="model-select">Model Size</label>
+          <div class="model-row">
+            <select id="model-select">
+              <option value="small">Small (~466 MB)</option>
+              <option value="medium">Medium (~1.5 GB)</option>
+            </select>
+            <button id="download-btn">Download</button>
+          </div>
+          <div id="download-progress" class="hidden">
+            <div id="progress-bar"><div id="progress-fill"></div></div>
+            <span id="progress-text">0%</span>
+          </div>
+        </section>
+
+        <section class="setting-group hidden" id="cloud-settings">
+          <label for="groq-key">Groq API Key</label>
+          <input type="password" id="groq-key" placeholder="Enter your Groq API key" />
+        </section>
+
+        <section class="setting-group">
+          <label>Recording Mode</label>
+          <div class="toggle-group">
+            <button id="mode-toggle" class="toggle-btn active">Toggle</button>
+            <button id="mode-ptt" class="toggle-btn">Push to Talk</button>
+          </div>
+        </section>
+
+        <section class="setting-group">
+          <label>Hotkey</label>
+          <div id="hotkey-display">
+            <kbd id="hotkey-text">Cmd+Shift+D</kbd>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

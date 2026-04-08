@@ -1,22 +1,175 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
-let greetInputEl: HTMLInputElement | null;
-let greetMsgEl: HTMLElement | null;
-
-async function greet() {
-  if (greetMsgEl && greetInputEl) {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    greetMsgEl.textContent = await invoke("greet", {
-      name: greetInputEl.value,
-    });
-  }
+interface Settings {
+  microphone: string;
+  engine: string;
+  whisperModel: string;
+  groqApiKey: string;
+  recordingMode: string;
+  hotkey: string;
 }
 
-window.addEventListener("DOMContentLoaded", () => {
-  greetInputEl = document.querySelector("#greet-input");
-  greetMsgEl = document.querySelector("#greet-msg");
-  document.querySelector("#greet-form")?.addEventListener("submit", (e) => {
-    e.preventDefault();
-    greet();
+interface MicDevice {
+  name: string;
+  is_default: boolean;
+}
+
+interface DownloadProgress {
+  downloaded: number;
+  total: number;
+  percent: number;
+}
+
+// DOM elements
+const statusDot = document.getElementById("status-dot")!;
+const statusText = document.getElementById("status-text")!;
+const micSelect = document.getElementById("mic-select") as HTMLSelectElement;
+const engineLocal = document.getElementById("engine-local")!;
+const engineCloud = document.getElementById("engine-cloud")!;
+const localSettings = document.getElementById("local-settings")!;
+const cloudSettings = document.getElementById("cloud-settings")!;
+const modelSelect = document.getElementById("model-select") as HTMLSelectElement;
+const downloadBtn = document.getElementById("download-btn")!;
+const downloadProgress = document.getElementById("download-progress")!;
+const progressFill = document.getElementById("progress-fill")!;
+const progressText = document.getElementById("progress-text")!;
+const groqKey = document.getElementById("groq-key") as HTMLInputElement;
+const modeToggle = document.getElementById("mode-toggle")!;
+const modePtt = document.getElementById("mode-ptt")!;
+const hotkeyText = document.getElementById("hotkey-text")!;
+
+let currentSettings: Settings;
+
+async function loadSettings() {
+  currentSettings = await invoke<Settings>("get_settings");
+
+  // Populate mic dropdown
+  const mics = await invoke<MicDevice[]>("list_microphones");
+  micSelect.innerHTML = "";
+  mics.forEach((mic) => {
+    const option = document.createElement("option");
+    option.value = mic.name;
+    option.textContent = mic.name + (mic.is_default ? " (default)" : "");
+    micSelect.appendChild(option);
   });
+  micSelect.value = currentSettings.microphone;
+
+  // Engine
+  setEngine(currentSettings.engine);
+
+  // Model
+  modelSelect.value = currentSettings.whisperModel;
+  await checkModelStatus();
+
+  // Groq key
+  groqKey.value = currentSettings.groqApiKey;
+
+  // Recording mode
+  setRecordingMode(currentSettings.recordingMode);
+
+  // Hotkey
+  hotkeyText.textContent = currentSettings.hotkey.replace("CmdOrCtrl", "Cmd");
+}
+
+function setEngine(engine: string) {
+  currentSettings.engine = engine;
+  engineLocal.classList.toggle("active", engine === "local");
+  engineCloud.classList.toggle("active", engine === "cloud");
+  localSettings.classList.toggle("hidden", engine !== "local");
+  cloudSettings.classList.toggle("hidden", engine !== "cloud");
+}
+
+function setRecordingMode(mode: string) {
+  currentSettings.recordingMode = mode;
+  modeToggle.classList.toggle("active", mode === "toggle");
+  modePtt.classList.toggle("active", mode === "push-to-talk");
+}
+
+async function checkModelStatus() {
+  const downloaded = await invoke<boolean>("check_model_downloaded", {
+    modelSize: modelSelect.value,
+  });
+  downloadBtn.textContent = downloaded ? "\u2713" : "Download";
+  (downloadBtn as HTMLButtonElement).disabled = downloaded;
+}
+
+async function saveSettings() {
+  currentSettings.microphone = micSelect.value;
+  currentSettings.whisperModel = modelSelect.value;
+  currentSettings.groqApiKey = groqKey.value;
+  await invoke("save_settings", { settings: currentSettings });
+}
+
+// Event listeners
+engineLocal.addEventListener("click", () => {
+  setEngine("local");
+  saveSettings();
 });
+
+engineCloud.addEventListener("click", () => {
+  setEngine("cloud");
+  saveSettings();
+});
+
+micSelect.addEventListener("change", () => saveSettings());
+
+modelSelect.addEventListener("change", async () => {
+  await checkModelStatus();
+  saveSettings();
+});
+
+downloadBtn.addEventListener("click", async () => {
+  (downloadBtn as HTMLButtonElement).disabled = true;
+  downloadProgress.classList.remove("hidden");
+  progressFill.style.width = "0%";
+  progressText.textContent = "0%";
+
+  try {
+    await invoke("download_model", { modelSize: modelSelect.value });
+    downloadBtn.textContent = "\u2713";
+  } catch (e) {
+    downloadBtn.textContent = "Retry";
+    (downloadBtn as HTMLButtonElement).disabled = false;
+    console.error("Download failed:", e);
+  }
+  downloadProgress.classList.add("hidden");
+});
+
+groqKey.addEventListener("change", () => saveSettings());
+
+modeToggle.addEventListener("click", () => {
+  setRecordingMode("toggle");
+  saveSettings();
+});
+
+modePtt.addEventListener("click", () => {
+  setRecordingMode("push-to-talk");
+  saveSettings();
+});
+
+// Listen for recording state changes
+listen<string>("recording-state", (event) => {
+  const state = event.payload;
+  statusDot.className = "";
+  if (state === "Recording") {
+    statusDot.classList.add("recording");
+    statusText.textContent = "Recording...";
+  } else if (state === "Transcribing") {
+    statusDot.classList.add("transcribing");
+    statusText.textContent = "Transcribing...";
+  } else {
+    statusDot.classList.add("ready");
+    statusText.textContent = "Ready";
+  }
+});
+
+// Listen for download progress
+listen<DownloadProgress>("download-progress", (event) => {
+  const { percent } = event.payload;
+  progressFill.style.width = `${percent}%`;
+  progressText.textContent = `${Math.round(percent)}%`;
+});
+
+// Initialize
+loadSettings();
