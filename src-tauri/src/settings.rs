@@ -23,7 +23,7 @@ impl Default for Settings {
             whisper_model: "small".to_string(),
             groq_api_key: String::new(),
             recording_mode: "toggle".to_string(),
-            hotkey: "CmdOrCtrl+Shift+D".to_string(),
+            hotkey: "CmdOrCtrl+Shift+Space".to_string(),
         }
     }
 }
@@ -62,7 +62,7 @@ mod tests {
         assert_eq!(settings.whisper_model, "small");
         assert_eq!(settings.groq_api_key, "");
         assert_eq!(settings.recording_mode, "toggle");
-        assert_eq!(settings.hotkey, "CmdOrCtrl+Shift+D");
+        assert_eq!(settings.hotkey, "CmdOrCtrl+Shift+Space");
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::{Manager, State};
+use tauri::{Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 use typr_lib::audio;
@@ -120,14 +120,51 @@ fn main() {
             toggle_recording,
         ])
         .setup(move |app| {
+            // Create the overlay window (small mic icon, top-right, always on top)
+            let monitor = app.primary_monitor().ok().flatten();
+            let (x, y) = if let Some(m) = monitor {
+                let size = m.size();
+                let scale = m.scale_factor();
+                let logical_w = size.width as f64 / scale;
+                ((logical_w - 60.0) as i32, 10_i32)
+            } else {
+                (1380, 10)
+            };
+
+            let overlay = WebviewWindowBuilder::new(
+                app,
+                "overlay",
+                WebviewUrl::App("src/overlay.html".into()),
+            )
+            .title("")
+            .inner_size(50.0, 50.0)
+            .position(x as f64, y as f64)
+            .resizable(false)
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .focused(false)
+            .shadow(false)
+            .build();
+
+            match overlay {
+                Ok(_) => println!("[Typr] Overlay window created"),
+                Err(e) => eprintln!("[Typr] Failed to create overlay: {}", e),
+            }
+
             let handle = app.handle().clone();
 
-            app.global_shortcut().on_shortcut(
+            println!("[Typr] Registering global shortcut: {}", initial_hotkey);
+
+            match app.global_shortcut().on_shortcut(
                 initial_hotkey.as_str(),
-                move |_app, _shortcut, event| {
+                move |_app, shortcut, event| {
+                    println!("[Typr] Hotkey event: {:?} state={:?}", shortcut, event.state);
                     let handle = handle.clone();
                     let state = handle.state::<AppState>();
                     let mode = state.settings.lock().unwrap().recording_mode.clone();
+                    println!("[Typr] Recording mode: {}", mode);
 
                     match event.state {
                         ShortcutState::Pressed => {
@@ -135,11 +172,15 @@ fn main() {
                                 let state = handle.state::<AppState>();
                                 match mode.as_str() {
                                     "toggle" => {
-                                        let _ =
-                                            do_toggle_recording(&handle, state.inner()).await;
+                                        println!("[Typr] Toggle mode: calling do_toggle_recording");
+                                        match do_toggle_recording(&handle, state.inner()).await {
+                                            Ok(result) => println!("[Typr] Toggle result: {}", result),
+                                            Err(e) => eprintln!("[Typr] Toggle error: {}", e),
+                                        }
                                     }
                                     "push-to-talk" => {
                                         let current = state.recorder.get_state();
+                                        println!("[Typr] PTT mode, current state: {:?}", current);
                                         if current == RecordingState::Ready {
                                             let mic = state
                                                 .settings
@@ -147,8 +188,10 @@ fn main() {
                                                 .unwrap()
                                                 .microphone
                                                 .clone();
-                                            let _ =
-                                                state.recorder.start_recording(&handle, &mic);
+                                            match state.recorder.start_recording(&handle, &mic) {
+                                                Ok(_) => println!("[Typr] Recording started"),
+                                                Err(e) => eprintln!("[Typr] Start recording error: {}", e),
+                                            }
                                         }
                                     }
                                     _ => {}
@@ -163,18 +206,24 @@ fn main() {
                                     if current == RecordingState::Recording {
                                         let settings =
                                             state.settings.lock().unwrap().clone();
-                                        let _ = state.recorder.stop_and_transcribe(
+                                        match state.recorder.stop_and_transcribe(
                                             &handle,
                                             &settings,
                                             &state.app_dir,
-                                        ).await;
+                                        ).await {
+                                            Ok(result) => println!("[Typr] Transcription: {}", result),
+                                            Err(e) => eprintln!("[Typr] Transcription error: {}", e),
+                                        }
                                     }
                                 });
                             }
                         }
                     }
                 },
-            )?;
+            ) {
+                Ok(_) => println!("[Typr] Global shortcut registered successfully"),
+                Err(e) => eprintln!("[Typr] ERROR: Failed to register global shortcut: {}", e),
+            }
 
             Ok(())
         })

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 interface Settings {
   microphone: string;
@@ -33,11 +34,39 @@ const modelSelect = document.getElementById("model-select") as HTMLSelectElement
 const downloadBtn = document.getElementById("download-btn")!;
 const downloadProgress = document.getElementById("download-progress")!;
 const progressFill = document.getElementById("progress-fill")!;
-const progressText = document.getElementById("progress-text")!;
 const groqKey = document.getElementById("groq-key") as HTMLInputElement;
 const modeToggle = document.getElementById("mode-toggle")!;
 const modePtt = document.getElementById("mode-ptt")!;
 const hotkeyText = document.getElementById("hotkey-text")!;
+
+// Section navigation
+const navItems = document.querySelectorAll(".nav-item");
+const sections = document.querySelectorAll(".content-section");
+
+navItems.forEach((item) => {
+  item.addEventListener("click", () => {
+    const target = item.getAttribute("data-section");
+    navItems.forEach((n) => n.classList.remove("active"));
+    sections.forEach((s) => s.classList.remove("active"));
+    item.classList.add("active");
+    document.getElementById(`section-${target}`)?.classList.add("active");
+  });
+});
+
+// Window drag — titlebar and sidebar empty space
+const titlebar = document.getElementById("titlebar")!;
+const sidebar = document.getElementById("sidebar")!;
+const appWindow = getCurrentWindow();
+
+titlebar.addEventListener("mousedown", (e) => {
+  if ((e.target as HTMLElement).closest("button, select, input, a, .nav-item")) return;
+  appWindow.startDragging();
+});
+
+sidebar.addEventListener("mousedown", (e) => {
+  if ((e.target as HTMLElement).closest("button, select, input, a, .nav-item")) return;
+  appWindow.startDragging();
+});
 
 let currentSettings: Settings;
 
@@ -123,7 +152,6 @@ downloadBtn.addEventListener("click", async () => {
   (downloadBtn as HTMLButtonElement).disabled = true;
   downloadProgress.classList.remove("hidden");
   progressFill.style.width = "0%";
-  progressText.textContent = "0%";
 
   try {
     await invoke("download_model", { modelSize: modelSelect.value });
@@ -168,7 +196,6 @@ listen<string>("recording-state", (event) => {
 listen<DownloadProgress>("download-progress", (event) => {
   const { percent } = event.payload;
   progressFill.style.width = `${percent}%`;
-  progressText.textContent = `${Math.round(percent)}%`;
 });
 
 // Initialize

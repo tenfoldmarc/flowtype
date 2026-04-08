@@ -40,6 +40,8 @@ unsafe impl Sync for SendStream {}
 pub struct AudioRecorder {
     samples: Arc<Mutex<Vec<f32>>>,
     stream: Option<SendStream>,
+    source_sample_rate: u32,
+    source_channels: u16,
 }
 
 impl AudioRecorder {
@@ -47,10 +49,15 @@ impl AudioRecorder {
         Self {
             samples: Arc::new(Mutex::new(Vec::new())),
             stream: None,
+            source_sample_rate: 48000,
+            source_channels: 1,
         }
     }
 
     pub fn start(&mut self, mic_name: &str) -> Result<(), String> {
+        // Clear any leftover samples from previous recording
+        self.samples.lock().unwrap().clear();
+
         let host = cpal::default_host();
 
         let device = if mic_name == "default" {
@@ -63,9 +70,22 @@ impl AudioRecorder {
                 .ok_or(format!("Microphone '{}' not found", mic_name))?
         };
 
+        // Use the device's default config instead of forcing 16kHz
+        let default_config = device
+            .default_input_config()
+            .map_err(|e| format!("Failed to get default input config: {}", e))?;
+
+        let sample_rate = default_config.sample_rate().0;
+        let channels = default_config.channels();
+
+        println!("[Typr] Mic config: {}Hz, {} channels", sample_rate, channels);
+
+        self.source_sample_rate = sample_rate;
+        self.source_channels = channels;
+
         let config = cpal::StreamConfig {
-            channels: 1,
-            sample_rate: cpal::SampleRate(16000),
+            channels,
+            sample_rate: cpal::SampleRate(sample_rate),
             buffer_size: cpal::BufferSize::Default,
         };
 
@@ -78,7 +98,7 @@ impl AudioRecorder {
                     buf.extend_from_slice(data);
                 },
                 |err| {
-                    eprintln!("Audio stream error: {}", err);
+                    eprintln!("[Typr] Audio stream error: {}", err);
                 },
                 None,
             )
@@ -86,16 +106,34 @@ impl AudioRecorder {
 
         stream.play().map_err(|e| e.to_string())?;
         self.stream = Some(SendStream(stream));
+        println!("[Typr] Audio recording started");
         Ok(())
     }
 
     pub fn stop_and_save(&mut self, output_path: &PathBuf) -> Result<PathBuf, String> {
         self.stream = None; // Drop stops the stream
+        println!("[Typr] Audio recording stopped");
 
         let samples = self.samples.lock().unwrap();
         if samples.is_empty() {
             return Err("No audio captured".to_string());
         }
+
+        println!("[Typr] Captured {} raw samples", samples.len());
+
+        // Convert to mono if multi-channel
+        let mono: Vec<f32> = if self.source_channels > 1 {
+            samples
+                .chunks(self.source_channels as usize)
+                .map(|frame| frame.iter().sum::<f32>() / frame.len() as f32)
+                .collect()
+        } else {
+            samples.clone()
+        };
+
+        // Downsample to 16kHz for whisper.cpp
+        let resampled = resample(&mono, self.source_sample_rate, 16000);
+        println!("[Typr] Resampled to {} samples at 16kHz", resampled.len());
 
         let spec = WavSpec {
             channels: 1,
@@ -105,8 +143,8 @@ impl AudioRecorder {
         };
 
         let mut writer = WavWriter::create(output_path, spec).map_err(|e| e.to_string())?;
-        for &sample in samples.iter() {
-            let amplitude = (sample * i16::MAX as f32) as i16;
+        for &sample in resampled.iter() {
+            let amplitude = (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
             writer.write_sample(amplitude).map_err(|e| e.to_string())?;
         }
         writer.finalize().map_err(|e| e.to_string())?;
@@ -114,6 +152,34 @@ impl AudioRecorder {
         drop(samples);
         self.samples.lock().unwrap().clear();
 
+        println!("[Typr] WAV saved to {:?}", output_path);
         Ok(output_path.clone())
     }
+}
+
+/// Simple linear interpolation resampler
+fn resample(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
+    if from_rate == to_rate {
+        return samples.to_vec();
+    }
+
+    let ratio = from_rate as f64 / to_rate as f64;
+    let output_len = (samples.len() as f64 / ratio) as usize;
+    let mut output = Vec::with_capacity(output_len);
+
+    for i in 0..output_len {
+        let src_idx = i as f64 * ratio;
+        let idx = src_idx as usize;
+        let frac = src_idx - idx as f64;
+
+        let sample = if idx + 1 < samples.len() {
+            samples[idx] as f64 * (1.0 - frac) + samples[idx + 1] as f64 * frac
+        } else {
+            samples[idx.min(samples.len() - 1)] as f64
+        };
+
+        output.push(sample as f32);
+    }
+
+    output
 }

@@ -1,8 +1,9 @@
 use std::path::PathBuf;
-use std::process::Command;
+use tauri::AppHandle;
+use tauri_plugin_shell::ShellExt;
 
-pub fn transcribe_local(
-    whisper_binary: &PathBuf,
+pub async fn transcribe_local(
+    app: &AppHandle,
     model_path: &PathBuf,
     audio_path: &PathBuf,
 ) -> Result<String, String> {
@@ -10,7 +11,12 @@ pub fn transcribe_local(
         return Err("Whisper model not found. Please download a model first.".to_string());
     }
 
-    let output = Command::new(whisper_binary)
+    println!("[Typr] Running whisper.cpp sidecar with model {:?}", model_path);
+
+    let output = app
+        .shell()
+        .sidecar("whisper-cpp")
+        .map_err(|e| format!("Failed to create sidecar command: {}", e))?
         .args([
             "-m",
             model_path.to_str().unwrap(),
@@ -21,14 +27,16 @@ pub fn transcribe_local(
             "en",
         ])
         .output()
+        .await
         .map_err(|e| format!("Failed to run whisper.cpp: {}", e))?;
 
-    if !output.status.success() {
+    if output.status.code() != Some(0) {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("whisper.cpp failed: {}", stderr));
     }
 
     let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    println!("[Typr] Whisper output: {}", text);
     Ok(text)
 }
 
@@ -59,15 +67,5 @@ mod tests {
             model_download_url("small"),
             "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin"
         );
-    }
-
-    #[test]
-    fn test_transcribe_missing_model() {
-        let binary = PathBuf::from("/nonexistent/whisper");
-        let model = PathBuf::from("/nonexistent/model.bin");
-        let audio = PathBuf::from("/nonexistent/audio.wav");
-        let result = transcribe_local(&binary, &model, &audio);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("not found"));
     }
 }

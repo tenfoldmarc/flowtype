@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::audio::AudioRecorder;
 use crate::cleanup::cleanup_text;
@@ -14,6 +14,18 @@ pub enum RecordingState {
     Ready,
     Recording,
     Transcribing,
+}
+
+fn update_overlay(app: &AppHandle, state: &RecordingState) {
+    if let Some(overlay) = app.get_webview_window("overlay") {
+        let class = match state {
+            RecordingState::Ready => "mic",
+            RecordingState::Recording => "mic recording",
+            RecordingState::Transcribing => "mic transcribing",
+        };
+        let js = format!("document.getElementById('mic').className = '{}';", class);
+        let _ = overlay.eval(&js);
+    }
 }
 
 pub struct Recorder {
@@ -44,6 +56,7 @@ impl Recorder {
 
         *state = RecordingState::Recording;
         let _ = app.emit("recording-state", RecordingState::Recording);
+        update_overlay(app, &RecordingState::Recording);
         Ok(())
     }
 
@@ -61,6 +74,7 @@ impl Recorder {
             }
             *state = RecordingState::Transcribing;
             let _ = app.emit("recording-state", RecordingState::Transcribing);
+            update_overlay(app, &RecordingState::Transcribing);
         }
 
         let temp_path = app_dir.join("temp_recording.wav");
@@ -74,9 +88,8 @@ impl Recorder {
         // Transcribe
         let raw_text = match settings.engine.as_str() {
             "local" => {
-                let whisper_binary = app_dir.join("whisper-cpp");
                 let model_path = app_dir.join(transcribe_local::model_filename(&settings.whisper_model));
-                transcribe_local::transcribe_local(&whisper_binary, &model_path, &temp_path)?
+                transcribe_local::transcribe_local(app, &model_path, &temp_path).await?
             }
             "cloud" => {
                 transcribe_groq::transcribe_groq(&settings.groq_api_key, &temp_path).await?
@@ -100,6 +113,7 @@ impl Recorder {
             let mut state = self.state.lock().unwrap();
             *state = RecordingState::Ready;
             let _ = app.emit("recording-state", RecordingState::Ready);
+            update_overlay(app, &RecordingState::Ready);
         }
 
         Ok(cleaned)
