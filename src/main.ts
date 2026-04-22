@@ -9,6 +9,10 @@ interface Settings {
   groqApiKey: string;
   recordingMode: string;
   hotkey: string;
+  aiCleanupEnabled: boolean;
+  cleanupStyle: string;
+  customDictionary: string[];
+  hasOnboarded: boolean;
 }
 
 interface MicDevice {
@@ -26,18 +30,15 @@ interface DownloadProgress {
 const statusDot = document.getElementById("status-dot")!;
 const statusText = document.getElementById("status-text")!;
 const micSelect = document.getElementById("mic-select") as HTMLSelectElement;
-const engineLocal = document.getElementById("engine-local")!;
-const engineCloud = document.getElementById("engine-cloud")!;
-const localSettings = document.getElementById("local-settings")!;
-const cloudSettings = document.getElementById("cloud-settings")!;
-const modelSelect = document.getElementById("model-select") as HTMLSelectElement;
-const downloadBtn = document.getElementById("download-btn")!;
-const downloadProgress = document.getElementById("download-progress")!;
-const progressFill = document.getElementById("progress-fill")!;
 const groqKey = document.getElementById("groq-key") as HTMLInputElement;
 const modeToggle = document.getElementById("mode-toggle")!;
 const modePtt = document.getElementById("mode-ptt")!;
 const hotkeyText = document.getElementById("hotkey-text")!;
+const cleanupOn = document.getElementById("cleanup-on")!;
+const cleanupOff = document.getElementById("cleanup-off")!;
+const dictionary = document.getElementById("dictionary") as HTMLTextAreaElement;
+const cleanupStyle = document.getElementById("cleanup-style") as HTMLSelectElement;
+const btnCheckUpdates = document.getElementById("btn-check-updates")!;
 
 // Section navigation
 const navItems = document.querySelectorAll(".nav-item");
@@ -53,18 +54,18 @@ navItems.forEach((item) => {
   });
 });
 
-// Window drag — titlebar and sidebar empty space
+// Window drag
 const titlebar = document.getElementById("titlebar")!;
 const sidebar = document.getElementById("sidebar")!;
 const appWindow = getCurrentWindow();
 
 titlebar.addEventListener("mousedown", (e) => {
-  if ((e.target as HTMLElement).closest("button, select, input, a, .nav-item")) return;
+  if ((e.target as HTMLElement).closest("button, select, input, textarea, a, .nav-item")) return;
   appWindow.startDragging();
 });
 
 sidebar.addEventListener("mousedown", (e) => {
-  if ((e.target as HTMLElement).closest("button, select, input, a, .nav-item")) return;
+  if ((e.target as HTMLElement).closest("button, select, input, textarea, a, .nav-item")) return;
   appWindow.startDragging();
 });
 
@@ -73,7 +74,6 @@ let currentSettings: Settings;
 async function loadSettings() {
   currentSettings = await invoke<Settings>("get_settings");
 
-  // Populate mic dropdown
   const mics = await invoke<MicDevice[]>("list_microphones");
   micSelect.innerHTML = "";
   mics.forEach((mic) => {
@@ -84,29 +84,15 @@ async function loadSettings() {
   });
   micSelect.value = currentSettings.microphone;
 
-  // Engine
-  setEngine(currentSettings.engine);
-
-  // Model
-  modelSelect.value = currentSettings.whisperModel;
-  await checkModelStatus();
-
-  // Groq key
+  // Engine is always cloud in v1
+  currentSettings.engine = "cloud";
   groqKey.value = currentSettings.groqApiKey;
-
-  // Recording mode
   setRecordingMode(currentSettings.recordingMode);
-
-  // Hotkey
   hotkeyText.textContent = currentSettings.hotkey.replace("CmdOrCtrl", "Cmd");
-}
 
-function setEngine(engine: string) {
-  currentSettings.engine = engine;
-  engineLocal.classList.toggle("active", engine === "local");
-  engineCloud.classList.toggle("active", engine === "cloud");
-  localSettings.classList.toggle("hidden", engine !== "local");
-  cloudSettings.classList.toggle("hidden", engine !== "cloud");
+  setCleanup(currentSettings.aiCleanupEnabled);
+  cleanupStyle.value = currentSettings.cleanupStyle || "natural";
+  dictionary.value = (currentSettings.customDictionary || []).join("\n");
 }
 
 function setRecordingMode(mode: string) {
@@ -115,68 +101,37 @@ function setRecordingMode(mode: string) {
   modePtt.classList.toggle("active", mode === "push-to-talk");
 }
 
-async function checkModelStatus() {
-  const downloaded = await invoke<boolean>("check_model_downloaded", {
-    modelSize: modelSelect.value,
-  });
-  downloadBtn.textContent = downloaded ? "\u2713" : "Download";
-  (downloadBtn as HTMLButtonElement).disabled = downloaded;
+function setCleanup(enabled: boolean) {
+  currentSettings.aiCleanupEnabled = enabled;
+  cleanupOn.classList.toggle("active", enabled);
+  cleanupOff.classList.toggle("active", !enabled);
 }
 
 async function saveSettings() {
   currentSettings.microphone = micSelect.value;
-  currentSettings.whisperModel = modelSelect.value;
   currentSettings.groqApiKey = groqKey.value;
+  currentSettings.cleanupStyle = cleanupStyle.value;
+  currentSettings.customDictionary = dictionary.value
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
   await invoke("save_settings", { settings: currentSettings });
 }
 
-// Event listeners
-engineLocal.addEventListener("click", () => {
-  setEngine("local");
-  saveSettings();
-});
-
-engineCloud.addEventListener("click", () => {
-  setEngine("cloud");
-  saveSettings();
-});
-
 micSelect.addEventListener("change", () => saveSettings());
-
-modelSelect.addEventListener("change", async () => {
-  await checkModelStatus();
-  saveSettings();
-});
-
-downloadBtn.addEventListener("click", async () => {
-  (downloadBtn as HTMLButtonElement).disabled = true;
-  downloadProgress.classList.remove("hidden");
-  progressFill.style.width = "0%";
-
-  try {
-    await invoke("download_model", { modelSize: modelSelect.value });
-    downloadBtn.textContent = "\u2713";
-  } catch (e) {
-    downloadBtn.textContent = "Retry";
-    (downloadBtn as HTMLButtonElement).disabled = false;
-    console.error("Download failed:", e);
-  }
-  downloadProgress.classList.add("hidden");
-});
-
 groqKey.addEventListener("change", () => saveSettings());
 
-modeToggle.addEventListener("click", () => {
-  setRecordingMode("toggle");
-  saveSettings();
+btnCheckUpdates.addEventListener("click", async () => {
+  await invoke("plugin:shell|open", { path: "https://github.com/tenfoldmarc/flowtype/releases/latest" });
 });
+modeToggle.addEventListener("click", () => { setRecordingMode("toggle"); saveSettings(); });
+modePtt.addEventListener("click", () => { setRecordingMode("push-to-talk"); saveSettings(); });
 
-modePtt.addEventListener("click", () => {
-  setRecordingMode("push-to-talk");
-  saveSettings();
-});
+cleanupOn.addEventListener("click", () => { setCleanup(true); saveSettings(); });
+cleanupOff.addEventListener("click", () => { setCleanup(false); saveSettings(); });
+cleanupStyle.addEventListener("change", () => saveSettings());
+dictionary.addEventListener("blur", () => saveSettings());
 
-// Listen for recording state changes
 listen<string>("recording-state", (event) => {
   const state = event.payload;
   statusDot.className = "";
@@ -192,11 +147,97 @@ listen<string>("recording-state", (event) => {
   }
 });
 
-// Listen for download progress
-listen<DownloadProgress>("download-progress", (event) => {
-  const { percent } = event.payload;
-  progressFill.style.width = `${percent}%`;
+
+// ── Onboarding wizard ───────────────────────────────
+const onboarding = document.getElementById("onboarding")!;
+const onboardingStepLabel = document.getElementById("onboarding-step-label")!;
+const onboardingTitle = document.getElementById("onboarding-title")!;
+const onboardingDesc = document.getElementById("onboarding-desc")!;
+const onboardingBody = document.getElementById("onboarding-body")!;
+const onboardingNext = document.getElementById("onboarding-next") as HTMLButtonElement;
+const onboardingSkip = document.getElementById("onboarding-skip")!;
+const onboardingDots = document.querySelectorAll(".onboarding-dot");
+
+let onboardingStep = 1;
+const ONBOARDING_STEPS = 3;
+
+function renderOnboardingStep() {
+  onboardingDots.forEach((d, i) => d.classList.toggle("active", i < onboardingStep));
+  onboardingStepLabel.textContent = `Step ${onboardingStep} of ${ONBOARDING_STEPS}`;
+
+  if (onboardingStep === 1) {
+    onboardingTitle.textContent = "Welcome to Flowtype";
+    onboardingDesc.textContent = "Voice-to-text for your Mac. Hold your hotkey, speak naturally, and cleaned-up text pastes wherever you're focused. Let's get you set up in 60 seconds.";
+    onboardingBody.innerHTML = `
+      <div style="display:flex; flex-direction:column; gap:14px; font-size:14px; color:var(--text-secondary); line-height:1.6;">
+        <div style="display:flex; gap:12px; align-items:flex-start;"><span style="color:var(--accent); font-family:var(--font-mono); font-size:12px; margin-top:2px;">01</span> <span>Speak into any app — Slack, Gmail, Notes, Claude.</span></div>
+        <div style="display:flex; gap:12px; align-items:flex-start;"><span style="color:var(--accent); font-family:var(--font-mono); font-size:12px; margin-top:2px;">02</span> <span>AI removes filler words, fixes grammar, respects your custom terms.</span></div>
+        <div style="display:flex; gap:12px; align-items:flex-start;"><span style="color:var(--accent); font-family:var(--font-mono); font-size:12px; margin-top:2px;">03</span> <span>Runs in the cloud (fast) or on-device (private, offline).</span></div>
+      </div>
+    `;
+    onboardingNext.textContent = "Let's go →";
+  } else if (onboardingStep === 2) {
+    onboardingTitle.textContent = "Add your Groq API key";
+    onboardingDesc.innerHTML = `Flowtype uses Groq for lightning-fast transcription + AI cleanup. Get your free key at <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent); text-decoration:underline;">console.groq.com/keys</a> — takes 30 seconds, no credit card needed.`;
+    onboardingBody.innerHTML = `
+      <label>Paste your key here</label>
+      <input type="password" id="onboard-key" placeholder="gsk_..." value="${currentSettings?.groqApiKey || ""}" />
+      <div style="margin-top:10px; font-size:12px; color:var(--text-tertiary); font-family:var(--font-mono);">Can be added later in Settings → Engine</div>
+    `;
+    onboardingNext.textContent = "Continue →";
+  } else {
+    onboardingTitle.textContent = "You're ready";
+    onboardingDesc.textContent = "Everything is configured. One last thing — macOS will ask for Accessibility permission when you first dictate. Click Allow — it's what lets Flowtype paste into other apps.";
+    onboardingBody.innerHTML = `
+      <div style="background:var(--bg-base); border:1px solid var(--border); border-radius:var(--radius); padding:20px; margin-bottom:16px;">
+        <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px; font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em;">How to dictate</div>
+        <div style="display:flex; align-items:center; gap:10px; font-size:14px;">
+          <kbd style="padding:5px 10px; background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius-sm); font-family:var(--font-mono); font-size:11px;">${(currentSettings?.hotkey || "CmdOrCtrl+Shift+Space").replace("CmdOrCtrl", "⌘")}</kbd>
+          <span style="color:var(--text-secondary);">→ speak → release → text appears</span>
+        </div>
+      </div>
+    `;
+    onboardingNext.textContent = "Start dictating 🎤";
+  }
+}
+
+async function completeOnboarding() {
+  const keyInput = document.getElementById("onboard-key") as HTMLInputElement | null;
+  if (keyInput && keyInput.value.trim()) {
+    currentSettings.groqApiKey = keyInput.value.trim();
+    currentSettings.engine = "cloud";
+    groqKey.value = currentSettings.groqApiKey;
+    setEngine("cloud");
+  }
+  currentSettings.hasOnboarded = true;
+  await saveSettings();
+  onboarding.classList.remove("active");
+}
+
+onboardingNext.addEventListener("click", () => {
+  if (onboardingStep === 2) {
+    const keyInput = document.getElementById("onboard-key") as HTMLInputElement;
+    if (keyInput?.value.trim()) {
+      currentSettings.groqApiKey = keyInput.value.trim();
+    }
+  }
+  if (onboardingStep < ONBOARDING_STEPS) {
+    onboardingStep++;
+    renderOnboardingStep();
+  } else {
+    completeOnboarding();
+  }
 });
 
-// Initialize
-loadSettings();
+onboardingSkip.addEventListener("click", completeOnboarding);
+
+async function init() {
+  await loadSettings();
+  if (!currentSettings.hasOnboarded) {
+    onboardingStep = 1;
+    renderOnboardingStep();
+    onboarding.classList.add("active");
+  }
+}
+
+init();

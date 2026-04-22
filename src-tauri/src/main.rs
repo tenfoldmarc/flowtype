@@ -5,11 +5,12 @@ use std::sync::Mutex;
 use tauri::{Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
-use typr_lib::audio;
-use typr_lib::downloader;
-use typr_lib::recorder::{Recorder, RecordingState};
-use typr_lib::settings::Settings;
-use typr_lib::transcribe_local;
+use flowtype_lib::audio;
+use flowtype_lib::downloader;
+use flowtype_lib::paste;
+use flowtype_lib::recorder::{Recorder, RecordingState};
+use flowtype_lib::settings::Settings;
+use flowtype_lib::transcribe_local;
 
 struct AppState {
     recorder: Recorder,
@@ -20,7 +21,7 @@ struct AppState {
 fn get_app_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("com.typr.app")
+        .join("com.tenfoldmarketing.flowtype")
 }
 
 #[tauri::command]
@@ -120,6 +121,10 @@ fn main() {
             toggle_recording,
         ])
         .setup(move |app| {
+            // On macOS, explicitly check Accessibility permission. If not granted, this call
+            // triggers the system prompt — otherwise the app would silently fail to paste.
+            paste::ensure_accessibility_permission();
+
             // Create the overlay window (small mic icon, top-right, always on top)
             let monitor = app.primary_monitor().ok().flatten();
             let (x, y) = if let Some(m) = monitor {
@@ -149,22 +154,22 @@ fn main() {
             .build();
 
             match overlay {
-                Ok(_) => println!("[Typr] Overlay window created"),
-                Err(e) => eprintln!("[Typr] Failed to create overlay: {}", e),
+                Ok(_) => println!("[Flowtype] Overlay window created"),
+                Err(e) => eprintln!("[Flowtype] Failed to create overlay: {}", e),
             }
 
             let handle = app.handle().clone();
 
-            println!("[Typr] Registering global shortcut: {}", initial_hotkey);
+            println!("[Flowtype] Registering global shortcut: {}", initial_hotkey);
 
             match app.global_shortcut().on_shortcut(
                 initial_hotkey.as_str(),
                 move |_app, shortcut, event| {
-                    println!("[Typr] Hotkey event: {:?} state={:?}", shortcut, event.state);
+                    println!("[Flowtype] Hotkey event: {:?} state={:?}", shortcut, event.state);
                     let handle = handle.clone();
                     let state = handle.state::<AppState>();
                     let mode = state.settings.lock().unwrap().recording_mode.clone();
-                    println!("[Typr] Recording mode: {}", mode);
+                    println!("[Flowtype] Recording mode: {}", mode);
 
                     match event.state {
                         ShortcutState::Pressed => {
@@ -172,15 +177,15 @@ fn main() {
                                 let state = handle.state::<AppState>();
                                 match mode.as_str() {
                                     "toggle" => {
-                                        println!("[Typr] Toggle mode: calling do_toggle_recording");
+                                        println!("[Flowtype] Toggle mode: calling do_toggle_recording");
                                         match do_toggle_recording(&handle, state.inner()).await {
-                                            Ok(result) => println!("[Typr] Toggle result: {}", result),
-                                            Err(e) => eprintln!("[Typr] Toggle error: {}", e),
+                                            Ok(result) => println!("[Flowtype] Toggle result: {}", result),
+                                            Err(e) => eprintln!("[Flowtype] Toggle error: {}", e),
                                         }
                                     }
                                     "push-to-talk" => {
                                         let current = state.recorder.get_state();
-                                        println!("[Typr] PTT mode, current state: {:?}", current);
+                                        println!("[Flowtype] PTT mode, current state: {:?}", current);
                                         if current == RecordingState::Ready {
                                             let mic = state
                                                 .settings
@@ -189,8 +194,8 @@ fn main() {
                                                 .microphone
                                                 .clone();
                                             match state.recorder.start_recording(&handle, &mic) {
-                                                Ok(_) => println!("[Typr] Recording started"),
-                                                Err(e) => eprintln!("[Typr] Start recording error: {}", e),
+                                                Ok(_) => println!("[Flowtype] Recording started"),
+                                                Err(e) => eprintln!("[Flowtype] Start recording error: {}", e),
                                             }
                                         }
                                     }
@@ -211,8 +216,8 @@ fn main() {
                                             &settings,
                                             &state.app_dir,
                                         ).await {
-                                            Ok(result) => println!("[Typr] Transcription: {}", result),
-                                            Err(e) => eprintln!("[Typr] Transcription error: {}", e),
+                                            Ok(result) => println!("[Flowtype] Transcription: {}", result),
+                                            Err(e) => eprintln!("[Flowtype] Transcription error: {}", e),
                                         }
                                     }
                                 });
@@ -221,8 +226,8 @@ fn main() {
                     }
                 },
             ) {
-                Ok(_) => println!("[Typr] Global shortcut registered successfully"),
-                Err(e) => eprintln!("[Typr] ERROR: Failed to register global shortcut: {}", e),
+                Ok(_) => println!("[Flowtype] Global shortcut registered successfully"),
+                Err(e) => eprintln!("[Flowtype] ERROR: Failed to register global shortcut: {}", e),
             }
 
             Ok(())

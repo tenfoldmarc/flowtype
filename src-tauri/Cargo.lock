@@ -1029,6 +1029,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "flowtype"
+version = "0.1.0"
+dependencies = [
+ "arboard",
+ "core-foundation 0.10.1",
+ "core-graphics 0.23.2",
+ "cpal",
+ "dirs",
+ "enigo",
+ "futures-util",
+ "hound",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-shell",
+ "tokio",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4864,26 +4886,6 @@ name = "typenum"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
-
-[[package]]
-name = "typr"
-version = "0.1.0"
-dependencies = [
- "arboard",
- "cpal",
- "dirs",
- "enigo",
- "futures-util",
- "hound",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-shell",
- "tokio",
-]
 
 [[package]]
 name = "unic-char-property"

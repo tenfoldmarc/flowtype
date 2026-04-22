@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::audio::AudioRecorder;
-use crate::cleanup::cleanup_text;
+use crate::cleanup::{ai_cleanup, basic_cleanup, is_whisper_hallucination};
 use crate::paste::paste_text;
 use crate::settings::Settings;
 use crate::transcribe_local;
@@ -66,7 +66,32 @@ impl Recorder {
         settings: &Settings,
         app_dir: &PathBuf,
     ) -> Result<String, String> {
-        // Stop recording
+        // Wrap the real work in an inner function so we can ALWAYS reset state on any exit path —
+        // previously, errors returned early and left the app stuck in Transcribing forever.
+        let result = self.do_stop_and_transcribe(app, settings, app_dir).await;
+
+        // Unconditional state reset — success or failure, we go back to Ready
+        {
+            let mut state = self.state.lock().unwrap();
+            *state = RecordingState::Ready;
+        }
+        let _ = app.emit("recording-state", RecordingState::Ready);
+        update_overlay(app, &RecordingState::Ready);
+
+        if let Err(ref e) = result {
+            eprintln!("[Flowtype] Transcription failed: {}", e);
+        }
+        result
+    }
+
+    async fn do_stop_and_transcribe(
+        &self,
+        app: &AppHandle,
+        settings: &Settings,
+        app_dir: &PathBuf,
+    ) -> Result<String, String> {
+        let overall_start = std::time::Instant::now();
+
         {
             let mut state = self.state.lock().unwrap();
             if *state != RecordingState::Recording {
@@ -79,13 +104,13 @@ impl Recorder {
 
         let temp_path = app_dir.join("temp_recording.wav");
 
-        // Save audio
         {
             let mut recorder = self.audio_recorder.lock().unwrap();
             recorder.stop_and_save(&temp_path)?;
         }
 
         // Transcribe
+        let transcribe_start = std::time::Instant::now();
         let raw_text = match settings.engine.as_str() {
             "local" => {
                 let model_path = app_dir.join(transcribe_local::model_filename(&settings.whisper_model));
@@ -96,26 +121,45 @@ impl Recorder {
             }
             _ => return Err(format!("Unknown engine: {}", settings.engine)),
         };
+        println!(
+            "[Flowtype] Transcription done in {:.2}s ({} chars)",
+            transcribe_start.elapsed().as_secs_f64(),
+            raw_text.len()
+        );
 
-        // Cleanup temp file
         let _ = std::fs::remove_file(&temp_path);
 
-        // Clean up text
-        let cleaned = cleanup_text(&raw_text);
+        if is_whisper_hallucination(&raw_text) {
+            println!("[Flowtype] Discarded silence hallucination: '{}'", raw_text.trim());
+            return Ok(String::new());
+        }
 
-        // Auto-paste
+        // AI cleanup (may hit network)
+        let cleanup_start = std::time::Instant::now();
+        let cleaned = if settings.ai_cleanup_enabled && !settings.groq_api_key.is_empty() {
+            ai_cleanup(
+                &raw_text,
+                &settings.groq_api_key,
+                &settings.cleanup_style,
+                &settings.custom_dictionary,
+            )
+            .await
+        } else {
+            basic_cleanup(&raw_text)
+        };
+        println!(
+            "[Flowtype] Cleanup done in {:.2}s",
+            cleanup_start.elapsed().as_secs_f64()
+        );
+
         if !cleaned.is_empty() {
             paste_text(&cleaned)?;
         }
 
-        // Reset state
-        {
-            let mut state = self.state.lock().unwrap();
-            *state = RecordingState::Ready;
-            let _ = app.emit("recording-state", RecordingState::Ready);
-            update_overlay(app, &RecordingState::Ready);
-        }
-
+        println!(
+            "[Flowtype] Total pipeline: {:.2}s",
+            overall_start.elapsed().as_secs_f64()
+        );
         Ok(cleaned)
     }
 }

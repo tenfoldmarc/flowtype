@@ -13,17 +13,37 @@ pub struct Settings {
     #[serde(rename = "recordingMode")]
     pub recording_mode: String,
     pub hotkey: String,
+    #[serde(rename = "aiCleanupEnabled", default = "default_cleanup_enabled")]
+    pub ai_cleanup_enabled: bool,
+    #[serde(rename = "cleanupStyle", default = "default_cleanup_style")]
+    pub cleanup_style: String,
+    #[serde(rename = "customDictionary", default)]
+    pub custom_dictionary: Vec<String>,
+    #[serde(rename = "hasOnboarded", default)]
+    pub has_onboarded: bool,
+}
+
+fn default_cleanup_enabled() -> bool {
+    true
+}
+
+fn default_cleanup_style() -> String {
+    "natural".to_string()
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             microphone: "default".to_string(),
-            engine: "local".to_string(),
+            engine: "cloud".to_string(),
             whisper_model: "small".to_string(),
             groq_api_key: String::new(),
             recording_mode: "toggle".to_string(),
             hotkey: "CmdOrCtrl+Shift+Space".to_string(),
+            ai_cleanup_enabled: true,
+            cleanup_style: "natural".to_string(),
+            custom_dictionary: Vec::new(),
+            has_onboarded: false,
         }
     }
 }
@@ -58,34 +78,39 @@ mod tests {
     fn test_default_settings() {
         let settings = Settings::default();
         assert_eq!(settings.microphone, "default");
-        assert_eq!(settings.engine, "local");
+        assert_eq!(settings.engine, "cloud");
         assert_eq!(settings.whisper_model, "small");
         assert_eq!(settings.groq_api_key, "");
         assert_eq!(settings.recording_mode, "toggle");
         assert_eq!(settings.hotkey, "CmdOrCtrl+Shift+Space");
+        assert!(settings.ai_cleanup_enabled);
+        assert_eq!(settings.cleanup_style, "natural");
+        assert!(settings.custom_dictionary.is_empty());
     }
 
     #[test]
     fn test_save_and_load() {
-        let dir = temp_dir().join("typr_test_settings");
+        let dir = temp_dir().join("flowtype_test_settings");
         let _ = fs::remove_dir_all(&dir);
 
         let mut settings = Settings::default();
         settings.engine = "cloud".to_string();
         settings.groq_api_key = "test-key-123".to_string();
+        settings.custom_dictionary = vec!["Tenfold".to_string(), "GoHighLevel".to_string()];
 
         settings.save(&dir).unwrap();
         let loaded = Settings::load(&dir);
 
         assert_eq!(loaded.engine, "cloud");
         assert_eq!(loaded.groq_api_key, "test-key-123");
+        assert_eq!(loaded.custom_dictionary.len(), 2);
 
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn test_load_missing_file_returns_default() {
-        let dir = temp_dir().join("typr_test_missing");
+        let dir = temp_dir().join("flowtype_test_missing");
         let _ = fs::remove_dir_all(&dir);
         let settings = Settings::load(&dir);
         assert_eq!(settings, Settings::default());
@@ -93,7 +118,7 @@ mod tests {
 
     #[test]
     fn test_load_corrupt_json_returns_default() {
-        let dir = temp_dir().join("typr_test_corrupt");
+        let dir = temp_dir().join("flowtype_test_corrupt");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("config.json"), "not json").unwrap();
