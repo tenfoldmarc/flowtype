@@ -8,7 +8,7 @@ Stop typing. Flowtype transcribes your voice and pastes cleaned-up text into any
 
 ---
 
-## 👉 [Download Flowtype for Mac](https://github.com/tenfoldmarc/flowtype/releases/latest/download/Flowtype_0.2.0.dmg)
+## 👉 [Download Flowtype for Mac](https://github.com/tenfoldmarc/flowtype/releases/latest/download/Flowtype_0.2.1.dmg)
 
 Free. Apple Silicon (M1/M2/M3/M4). 7.3 MB.
 
@@ -35,15 +35,34 @@ Free. Apple Silicon (M1/M2/M3/M4). 7.3 MB.
 
 ## Install
 
-1. Download the latest DMG from [Releases](https://github.com/tenfoldmarc/flowtype/releases/latest)
+1. [Download the latest DMG](https://github.com/tenfoldmarc/flowtype/releases/latest/download/Flowtype_0.2.1.dmg)
 2. Open the DMG and drag **Flowtype.app** to your `/Applications` folder
 3. Open Flowtype from Spotlight (`Cmd+Space` → type "Flowtype")
-4. macOS will warn "unidentified developer" — right-click the app → **Open** → click Open in the dialog (only needed once)
-5. The onboarding wizard walks you through:
+
+### Getting past macOS security warning (one-time)
+
+Because Flowtype isn't Apple-signed yet, macOS blocks it the first time. Here's the 30-second fix:
+
+**Option A — clicks only:**
+1. Double-click Flowtype → macOS shows "Not Opened" warning → click **Done**
+2. Open **System Settings → Privacy & Security**
+3. Scroll down to **Security** → click **Open Anyway** next to the Flowtype message
+4. Enter your password → Flowtype launches
+
+**Option B — one terminal command (faster):**
+Open Terminal and run:
+```bash
+xattr -d com.apple.quarantine /Applications/Flowtype.app
+```
+Now Flowtype opens normally, no more warnings.
+
+### Once it's open
+
+4. The onboarding wizard walks you through:
    - Pasting your Groq API key
-   - Granting Microphone permission
-   - Granting Accessibility permission (so Flowtype can paste into other apps)
-6. Hit `Cmd+Shift+Space`, speak a sentence, hit it again — clean text pastes wherever your cursor is
+   - Granting Microphone permission (macOS will prompt)
+   - Granting Accessibility permission (macOS will prompt — this is what lets Flowtype paste into other apps)
+5. Hit `Cmd+Shift+Space`, speak a sentence, hit it again — clean text pastes wherever your cursor is
 
 ---
 

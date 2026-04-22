@@ -281,8 +281,10 @@ async function completeOnboarding() {
   if (keyInput && keyInput.value.trim()) {
     currentSettings.groqApiKey = keyInput.value.trim();
     currentSettings.engine = "cloud";
-    groqKey.value = currentSettings.groqApiKey;
   }
+  // Sync Settings UI field with currentSettings BEFORE save — saveSettings() reads from
+  // the DOM field, so without this the onboarding-captured key gets overwritten with "".
+  groqKey.value = currentSettings.groqApiKey;
   currentSettings.hasOnboarded = true;
   await saveSettings();
   onboarding.classList.remove("active");
