@@ -1,6 +1,6 @@
 [package]
 name = "flowtype"
-version = "0.1.0"
+version = "0.2.0"
 description = "Voice-to-text dictation powered by Whisper and Groq"
 authors = ["Tenfold Marketing"]
 edition = "2021"

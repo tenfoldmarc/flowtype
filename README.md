@@ -8,6 +8,12 @@ Stop typing. Flowtype transcribes your voice and pastes cleaned-up text into any
 
 ---
 
+## 👉 [Download Flowtype for Mac](https://github.com/tenfoldmarc/flowtype/releases/latest/download/Flowtype_0.2.0.dmg)
+
+Free. Apple Silicon (M1/M2/M3/M4). 7.3 MB.
+
+---
+
 ## Features
 
 - **Global hotkey** — `Cmd+Shift+Space` from anywhere

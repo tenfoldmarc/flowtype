@@ -72,6 +72,94 @@ async fn toggle_recording(
     do_toggle_recording(&app, &state).await
 }
 
+#[tauri::command]
+fn change_hotkey(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    hotkey: String,
+) -> Result<(), String> {
+    let old_hotkey = state.settings.lock().unwrap().hotkey.clone();
+
+    // Unregister old
+    if let Err(e) = app.global_shortcut().unregister(old_hotkey.as_str()) {
+        eprintln!("[Flowtype] Warning unregistering old hotkey: {}", e);
+    }
+
+    // Register new
+    register_hotkey(&app, &hotkey).map_err(|e| format!("Invalid hotkey: {}", e))?;
+
+    // Save to settings
+    {
+        let mut settings = state.settings.lock().unwrap();
+        settings.hotkey = hotkey.clone();
+        settings.save(&state.app_dir)?;
+    }
+
+    println!("[Flowtype] Hotkey changed to: {}", hotkey);
+    Ok(())
+}
+
+/// Register a global shortcut with the Flowtype hotkey callback. Used on startup
+/// and whenever the user changes their hotkey via settings.
+fn register_hotkey(app: &tauri::AppHandle, hotkey: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let handle = app.clone();
+    app.global_shortcut().on_shortcut(
+        hotkey,
+        move |_app, shortcut, event| {
+            println!("[Flowtype] Hotkey event: {:?} state={:?}", shortcut, event.state);
+            let handle = handle.clone();
+            let state = handle.state::<AppState>();
+            let mode = state.settings.lock().unwrap().recording_mode.clone();
+
+            match event.state {
+                ShortcutState::Pressed => {
+                    tauri::async_runtime::spawn(async move {
+                        let state = handle.state::<AppState>();
+                        match mode.as_str() {
+                            "toggle" => {
+                                match do_toggle_recording(&handle, state.inner()).await {
+                                    Ok(result) => println!("[Flowtype] Toggle result: {}", result),
+                                    Err(e) => eprintln!("[Flowtype] Toggle error: {}", e),
+                                }
+                            }
+                            "push-to-talk" => {
+                                let current = state.recorder.get_state();
+                                if current == RecordingState::Ready {
+                                    let mic = state.settings.lock().unwrap().microphone.clone();
+                                    match state.recorder.start_recording(&handle, &mic) {
+                                        Ok(_) => println!("[Flowtype] Recording started"),
+                                        Err(e) => eprintln!("[Flowtype] Start error: {}", e),
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    });
+                }
+                ShortcutState::Released => {
+                    if mode == "push-to-talk" {
+                        tauri::async_runtime::spawn(async move {
+                            let state = handle.state::<AppState>();
+                            if state.recorder.get_state() == RecordingState::Recording {
+                                let settings = state.settings.lock().unwrap().clone();
+                                match state
+                                    .recorder
+                                    .stop_and_transcribe(&handle, &settings, &state.app_dir)
+                                    .await
+                                {
+                                    Ok(result) => println!("[Flowtype] Transcription: {}", result),
+                                    Err(e) => eprintln!("[Flowtype] Error: {}", e),
+                                }
+                            }
+                        });
+                    }
+                }
+            }
+        },
+    )?;
+    Ok(())
+}
+
 /// Shared logic for toggle recording, used by both the Tauri command and hotkey handler.
 async fn do_toggle_recording(
     app: &tauri::AppHandle,
@@ -119,6 +207,7 @@ fn main() {
             check_model_downloaded,
             download_model,
             toggle_recording,
+            change_hotkey,
         ])
         .setup(move |app| {
             // On macOS, explicitly check Accessibility permission. If not granted, this call
@@ -158,76 +247,10 @@ fn main() {
                 Err(e) => eprintln!("[Flowtype] Failed to create overlay: {}", e),
             }
 
-            let handle = app.handle().clone();
-
-            println!("[Flowtype] Registering global shortcut: {}", initial_hotkey);
-
-            match app.global_shortcut().on_shortcut(
-                initial_hotkey.as_str(),
-                move |_app, shortcut, event| {
-                    println!("[Flowtype] Hotkey event: {:?} state={:?}", shortcut, event.state);
-                    let handle = handle.clone();
-                    let state = handle.state::<AppState>();
-                    let mode = state.settings.lock().unwrap().recording_mode.clone();
-                    println!("[Flowtype] Recording mode: {}", mode);
-
-                    match event.state {
-                        ShortcutState::Pressed => {
-                            tauri::async_runtime::spawn(async move {
-                                let state = handle.state::<AppState>();
-                                match mode.as_str() {
-                                    "toggle" => {
-                                        println!("[Flowtype] Toggle mode: calling do_toggle_recording");
-                                        match do_toggle_recording(&handle, state.inner()).await {
-                                            Ok(result) => println!("[Flowtype] Toggle result: {}", result),
-                                            Err(e) => eprintln!("[Flowtype] Toggle error: {}", e),
-                                        }
-                                    }
-                                    "push-to-talk" => {
-                                        let current = state.recorder.get_state();
-                                        println!("[Flowtype] PTT mode, current state: {:?}", current);
-                                        if current == RecordingState::Ready {
-                                            let mic = state
-                                                .settings
-                                                .lock()
-                                                .unwrap()
-                                                .microphone
-                                                .clone();
-                                            match state.recorder.start_recording(&handle, &mic) {
-                                                Ok(_) => println!("[Flowtype] Recording started"),
-                                                Err(e) => eprintln!("[Flowtype] Start recording error: {}", e),
-                                            }
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            });
-                        }
-                        ShortcutState::Released => {
-                            if mode == "push-to-talk" {
-                                tauri::async_runtime::spawn(async move {
-                                    let state = handle.state::<AppState>();
-                                    let current = state.recorder.get_state();
-                                    if current == RecordingState::Recording {
-                                        let settings =
-                                            state.settings.lock().unwrap().clone();
-                                        match state.recorder.stop_and_transcribe(
-                                            &handle,
-                                            &settings,
-                                            &state.app_dir,
-                                        ).await {
-                                            Ok(result) => println!("[Flowtype] Transcription: {}", result),
-                                            Err(e) => eprintln!("[Flowtype] Transcription error: {}", e),
-                                        }
-                                    }
-                                });
-                            }
-                        }
-                    }
-                },
-            ) {
-                Ok(_) => println!("[Flowtype] Global shortcut registered successfully"),
-                Err(e) => eprintln!("[Flowtype] ERROR: Failed to register global shortcut: {}", e),
+            println!("[Flowtype] Registering initial hotkey: {}", initial_hotkey);
+            match register_hotkey(app.handle(), &initial_hotkey) {
+                Ok(_) => println!("[Flowtype] Global shortcut registered"),
+                Err(e) => eprintln!("[Flowtype] ERROR registering hotkey: {}", e),
             }
 
             Ok(())

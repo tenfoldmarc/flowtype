@@ -20,12 +20,6 @@ interface MicDevice {
   is_default: boolean;
 }
 
-interface DownloadProgress {
-  downloaded: number;
-  total: number;
-  percent: number;
-}
-
 // DOM elements
 const statusDot = document.getElementById("status-dot")!;
 const statusText = document.getElementById("status-text")!;
@@ -33,7 +27,7 @@ const micSelect = document.getElementById("mic-select") as HTMLSelectElement;
 const groqKey = document.getElementById("groq-key") as HTMLInputElement;
 const modeToggle = document.getElementById("mode-toggle")!;
 const modePtt = document.getElementById("mode-ptt")!;
-const hotkeyText = document.getElementById("hotkey-text")!;
+const hotkeyBtn = document.getElementById("hotkey-btn") as HTMLButtonElement;
 const cleanupOn = document.getElementById("cleanup-on")!;
 const cleanupOff = document.getElementById("cleanup-off")!;
 const dictionary = document.getElementById("dictionary") as HTMLTextAreaElement;
@@ -88,7 +82,7 @@ async function loadSettings() {
   currentSettings.engine = "cloud";
   groqKey.value = currentSettings.groqApiKey;
   setRecordingMode(currentSettings.recordingMode);
-  hotkeyText.textContent = currentSettings.hotkey.replace("CmdOrCtrl", "Cmd");
+  hotkeyBtn.textContent = prettyHotkey(currentSettings.hotkey);
 
   setCleanup(currentSettings.aiCleanupEnabled);
   cleanupStyle.value = currentSettings.cleanupStyle || "natural";
@@ -123,6 +117,87 @@ groqKey.addEventListener("change", () => saveSettings());
 
 btnCheckUpdates.addEventListener("click", async () => {
   await invoke("plugin:shell|open", { path: "https://github.com/tenfoldmarc/flowtype/releases/latest" });
+});
+
+// ── Hotkey recording ───────────────────────────────────
+function prettyHotkey(h: string): string {
+  return h
+    .replace("CmdOrCtrl", "⌘")
+    .replace("Cmd", "⌘")
+    .replace("Control", "⌃")
+    .replace("Ctrl", "⌃")
+    .replace("Shift", "⇧")
+    .replace("Alt", "⌥")
+    .replace("Option", "⌥")
+    .replace(/\+/g, "");
+}
+
+let isRecordingHotkey = false;
+
+hotkeyBtn.addEventListener("click", () => {
+  if (isRecordingHotkey) return;
+  isRecordingHotkey = true;
+  hotkeyBtn.textContent = "Press keys…";
+  hotkeyBtn.style.borderColor = "var(--accent)";
+  hotkeyBtn.style.color = "var(--accent)";
+});
+
+document.addEventListener("keydown", async (e) => {
+  if (!isRecordingHotkey) return;
+  e.preventDefault();
+  e.stopPropagation();
+
+  // Ignore if only modifiers pressed
+  const ignoredKeys = ["Meta", "Control", "Alt", "Shift", "Escape"];
+  if (ignoredKeys.includes(e.key)) {
+    if (e.key === "Escape") {
+      isRecordingHotkey = false;
+      hotkeyBtn.textContent = prettyHotkey(currentSettings.hotkey);
+      hotkeyBtn.style.borderColor = "";
+      hotkeyBtn.style.color = "";
+    }
+    return;
+  }
+
+  const parts: string[] = [];
+  if (e.metaKey) parts.push("CmdOrCtrl");
+  if (e.ctrlKey && !e.metaKey) parts.push("CmdOrCtrl");
+  if (e.altKey) parts.push("Alt");
+  if (e.shiftKey) parts.push("Shift");
+
+  if (parts.length === 0) {
+    hotkeyBtn.textContent = "Need a modifier (⌘/⌃/⌥)";
+    setTimeout(() => {
+      hotkeyBtn.textContent = prettyHotkey(currentSettings.hotkey);
+      hotkeyBtn.style.borderColor = "";
+      hotkeyBtn.style.color = "";
+      isRecordingHotkey = false;
+    }, 1500);
+    return;
+  }
+
+  let keyName = e.key;
+  if (keyName === " ") keyName = "Space";
+  else if (keyName.length === 1) keyName = keyName.toUpperCase();
+
+  const newHotkey = [...parts, keyName].join("+");
+
+  try {
+    await invoke("change_hotkey", { hotkey: newHotkey });
+    currentSettings.hotkey = newHotkey;
+    hotkeyBtn.textContent = prettyHotkey(newHotkey);
+    hotkeyBtn.style.borderColor = "";
+    hotkeyBtn.style.color = "";
+  } catch (err) {
+    console.error("Hotkey change failed:", err);
+    hotkeyBtn.textContent = "Invalid — click to retry";
+    setTimeout(() => {
+      hotkeyBtn.textContent = prettyHotkey(currentSettings.hotkey);
+      hotkeyBtn.style.borderColor = "";
+      hotkeyBtn.style.color = "";
+    }, 1500);
+  }
+  isRecordingHotkey = false;
 });
 modeToggle.addEventListener("click", () => { setRecordingMode("toggle"); saveSettings(); });
 modePtt.addEventListener("click", () => { setRecordingMode("push-to-talk"); saveSettings(); });
@@ -207,7 +282,6 @@ async function completeOnboarding() {
     currentSettings.groqApiKey = keyInput.value.trim();
     currentSettings.engine = "cloud";
     groqKey.value = currentSettings.groqApiKey;
-    setEngine("cloud");
   }
   currentSettings.hasOnboarded = true;
   await saveSettings();
