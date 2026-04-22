@@ -8,9 +8,9 @@ Stop typing. Flowtype transcribes your voice and pastes cleaned-up text into any
 
 ---
 
-## 👉 [Download Flowtype for Mac](https://github.com/tenfoldmarc/flowtype/releases/latest/download/Flowtype_0.2.1.dmg)
+## 👉 [Download Flowtype for Mac](https://github.com/tenfoldmarc/flowtype/releases/latest)
 
-Free. Apple Silicon (M1/M2/M3/M4). 7.3 MB.
+Free. Apple Silicon (M1/M2/M3/M4). ~7 MB.
 
 ---
 
@@ -35,7 +35,7 @@ Free. Apple Silicon (M1/M2/M3/M4). 7.3 MB.
 
 ## Install
 
-1. [Download the latest DMG](https://github.com/tenfoldmarc/flowtype/releases/latest/download/Flowtype_0.2.1.dmg)
+1. [Download the latest DMG](https://github.com/tenfoldmarc/flowtype/releases/latest) (click the `.dmg` file in the Assets section)
 2. Open the DMG and drag **Flowtype.app** to your `/Applications` folder
 3. Open Flowtype from Spotlight (`Cmd+Space` → type "Flowtype")
 
